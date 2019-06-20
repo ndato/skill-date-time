@@ -1,7 +1,5 @@
-what time will it be (in|) {offset} (hours|minutes|seconds) (from now|)
-what is the time in {offset} (hours|minutes|seconds) (from now|)
-what time will it be (in|) {offset} (hours|minutes|seconds) (from now|) in {location}
-what is the time in {offset} (hours|minutes|seconds) (from now|) in {location}
-what time will it be in {location} (in|) {offset} (hours|minutes|seconds) (from now|)
-what is the time in {location} in {offset} (hours|minutes|seconds) (from now!)
-
+(excuse me|apologies|pardon|) (do you know|may i (ask|know)|) what time will it be (in|) {offset} (hours|minutes|seconds) (from now|) (at|in|for) {location}
+(excuse me|apologies|pardon|) (in|) {offset} (hours|minutes|seconds) what time will it be (from now|) in (at|in|for) {location}
+(excuse me|apologies|pardon|) (what is|what's|what will be) the time (in|) {offset} (hours|minutes|seconds) (from now|) (at|in|for) {location}
+(excuse me|apologies|pardon|) (can you|(kindly|please) (do|)|) (check|tell|give|) (me|) (the|) time (in|) {offset} (hours|minutes|seconds) (from now|) (please|) (at|in|for) {location}
+(excuse me|apologies|pardon|) (do you know|may i (ask|know)|) when is it {offset} (hours|minutes|seconds) (from now|) (at|in|for) {location}
