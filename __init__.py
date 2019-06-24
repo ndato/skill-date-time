@@ -291,10 +291,6 @@ class TimeSkill(MycroftSkill):
                     self.enclosure.display_manager.remove_active()
                 self.displayed_time = None
 
-    @intent_file_handler("what.time.is.it.intent")
-    def handle_query_time_alt(self, message):
-        self.handle_query_time(message)
-
     def _extract_location(self, utt):
         # if "Location" in message.data:
         #     return message.data["Location"]
@@ -316,10 +312,11 @@ class TimeSkill(MycroftSkill):
     ######################################################################
     ## Time queries / display
 
-    @intent_handler(IntentBuilder("").require("Query").require("Time").
-                    optionally("Location"))
-    def handle_query_time(self, message):
+    def handle_query_current_time(self, message):
         utt = message.data.get('utterance', "")
+        #self.log.info(message.data.get('Location'))
+
+        
         location = self._extract_location(utt)
         current_time = self.get_spoken_current_time(location)
         if not current_time:
@@ -339,9 +336,21 @@ class TimeSkill(MycroftSkill):
         self.answering_query = False
         self.displayed_time = None
 
-    @intent_file_handler("what.time.will.it.be.intent")
+    #@intent_handler(IntentBuilder("handle_query_current_time").optionally("Query").require("Time").
+    #            optionally("Location"))
+    #def handle_query_current_time_adapt(self, message):
+    #    self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
+    #    self.handle_query_current_time(message)
+    
+    @intent_file_handler("what.time.is.it.intent")
+    def handle_query_current_time_padatious(self, message):
+        self.log.info('Intent: Current Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
+        self.handle_query_current_time(message)
+
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
+        #self.log.info(message.data.get('Location'))
+        self.log.info(message.data.get('Offset'))
         extract = extract_datetime(utt)
         if extract:
             dt = extract[0]
@@ -364,6 +373,17 @@ class TimeSkill(MycroftSkill):
         self.enclosure.activate_mouth_events()
         self.answering_query = False
         self.displayed_time = None
+
+#    @intent_handler(IntentBuilder("").optionally("Query").require("Future").require("Offset").
+#            optionally("Location")) 
+#    def handle_query_future_time_adapt(self, message):
+#        self.log.info('Intent: Future Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
+#        self.handle_query_future_time(message)
+
+    @intent_file_handler("what.time.will.it.be.intent")
+    def handle_query_future_time_padatious(self, message):
+        self.log.info('Intent: Future Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
+        self.handle_query_future_time(message)
 
     @intent_handler(IntentBuilder("").require("Display").require("Time").
                     optionally("Location"))
