@@ -20,6 +20,13 @@ import tzlocal
 from astral import Astral
 import holidays
 
+# for location handler
+import os, sys
+from collections import defaultdict
+from urllib.request   import urlretrieve
+from urllib.parse import urljoin
+from zipfile  import ZipFile
+
 from adapt.intent import IntentBuilder
 import mycroft.audio
 # from mycroft.util.format import nice_time
@@ -31,6 +38,14 @@ from mycroft.util.parse import extract_datetime, fuzzy_match, extract_number, no
 from mycroft.util.time import now_utc, default_timezone, to_local
 from mycroft.skills.core import resting_screen_handler
 
+# For Location checking
+#from geonames import GeonamesClient
+import importlib.util
+pathname = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'geonames.py')
+
+geonames = importlib.util.spec_from_file_location("GeonamesClient", pathname)
+Geonames = importlib.util.module_from_spec(geonames)
+geonames.loader.exec_module(Geonames)
 
 class TimeSkill(MycroftSkill):
 
@@ -38,8 +53,15 @@ class TimeSkill(MycroftSkill):
         super(TimeSkill, self).__init__("TimeSkill")
         self.astral = Astral()
         self.displayed_time = None
-        self.display_tz = None
+        self.display_tz = None 
         self.answering_query = False
+
+        # for location handler
+        self.geonames_countryname = 'countryInfo'
+        self.geonames_city2tzname = 'cities15000'
+        self.geonames_url = 'http://download.geonames.org/export/dump/'
+        self.country_list = self.get_country_list(self.geonames_countryname, self.geonames_url)
+        self.city2tz_list = self.get_locationtz_list(self.geonames_city2tzname, self.geonames_url)
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -83,59 +105,107 @@ class TimeSkill(MycroftSkill):
         return self.config_core.get('time_format') == 'full'
 
     def get_timezone(self, locale):
+
         try:
-            # This handles common city names, like "Dallas" or "Paris"
-            return pytz.timezone(self.astral[locale].timezone)
+            # This handles codes like "America/Los_Angeles"
+            self.log.info('get_timezone: Final Timezone from PyTZ: ' + str(pytz.timezone(locale)))
+            return pytz.timezone(locale)
         except:
             pass
 
         try:
-            # This handles codes like "America/Los_Angeles"
-            return pytz.timezone(locale)
+            # This handles common city names, like "Dallas" or "Paris"
+            self.log.info('get_timezone: Final Timezone from Astral: ' + str(self.astral[locale].timezone))
+            return pytz.timezone(self.astral[locale].timezone)
         except:
             pass
 
         # Check lookup table for other timezones.  This can also
         # be a translation layer.
         # E.g. "china = GMT+8"
+
         timezones = self.translate_namedvalues("timezone.value")
         for timezone in timezones:
             if locale.lower() == timezone.lower():
                 # assumes translation is correct
+                self.log.info('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
                 return pytz.timezone(timezones[timezone].strip())
 
-        # Now we gotta get a little fuzzy
-        # Look at the pytz list of all timezones. It consists of
-        # Location/Name pairs.  For example:
-        # ["Africa/Abidjan", "Africa/Accra", ... "America/Denver", ...
-        #  "America/New_York", ..., "America/North_Dakota/Center", ...
-        #  "Cuba", ..., "EST", ..., "Egypt", ..., "Etc/GMT+3", ...
-        #  "Etc/Zulu", ... "US/Eastern", ... "UTC", ..., "Zulu"]
-        target = locale.lower()
-        best = None
-        for name in pytz.all_timezones:
-            normalized = name.lower().replace("_", " ").split("/") # E.g. "Australia/Sydney"
-            if len(normalized) == 1:
-                pct = fuzzy_match(normalized[0], target)
-            elif len(normalized) >= 2:
-                pct = fuzzy_match(normalized[1], target)                           # e.g. "Sydney"
-                pct2 = fuzzy_match(normalized[-2] + " " + normalized[-1], target)  # e.g. "Sydney Australia" or "Center North Dakota"
-                pct3 = fuzzy_match(normalized[-1] + " " + normalized[-2], target)  # e.g. "Australia Sydney"
-                pct = max(pct, pct2, pct3)
-            if not best or pct >= best[0]:
-                best = (pct, name)
-        if best and best[0] > 0.8:
-           # solid choice
-           return pytz.timezone(best[1])
-        if best and best[0] > 0.3:
-            # Convert to a better speakable version
-            say = re.sub(r"([a-z])([A-Z])", r"\g<1> \g<2>", best[1])  # e.g. EasterIsland  to "Easter Island"
-            say = say.replace("_", " ")  # e.g. "North_Dakota" to "North Dakota"
-            say = say.split("/")  # e.g. "America/North Dakota/Center" to ["America", "North Dakota", "Center"]
-            say.reverse()
-            say = " ".join(say)   # e.g.  "Center North Dakota America", or "Easter Island Chile"
-            if self.ask_yesno("did.you.mean.timezone", data={"zone_name": say}) == "yes":
-                return pytz.timezone(best[1])
+        # Match <Country> first using PyTZ and Geocode Country List by finding the Capital of the Country first
+        try:
+            capital = self.country_list[str(locale).lower()][1]
+            result = self.get_city_data(capital, locale)
+            if result:
+                self.log.info('get_timezone: Final Timezone from Capital of the Country: ' + str(result[0]))
+                return pytz.timezone(result[0])  
+        except:
+            pass
+
+        # Then match the <City> next
+        result = self.get_city_data(locale)
+        if result:
+            self.log.info('get_timezone: Final Timezone from Geocode: ' + str(result[0]))
+            return pytz.timezone(result[0])
+
+        # If not, match different combinations
+        combinations = [
+            ['city', 'country'],
+            ['country', 'city'],
+        ]
+        locale_split = str(locale).lower().split(" ")
+        results = []
+        for i in range(0, len(locale_split)):
+            for combination in combinations:
+                locale_toparse = [" ".join(locale_split[:i]), " ".join(locale_split[i:])]
+                city = ''
+                country = ''
+                #state = ''
+
+                for index in range(0, len(combination)):
+                    if combination[index] == 'country':
+                        country = locale_toparse[index]
+                    elif combination[index] == 'city':
+                        city = locale_toparse[index]
+
+                try:
+                    country_data = self.country_list[str(country).lower()]
+                    city_data = self.get_city_data(str(city).lower(), country)
+                    self.log.info('get_timezone: Multi-locations: ' + str(country_data) + ' ' +str(city_data))
+                    results.append([country, country_data, city, city_data])
+                except:
+                    pass
+        
+        if results:
+            results = sorted(results, key = lambda a: a[3][2], reverse = True)
+            self.log.info('get_timezone: Multi-locations: ' + str(results[0][3][0]))
+            return pytz.timezone(results[0][3][0])
+        
+        # Use Geonames API as last resort
+        try:
+            location_data = Geonames.get_location_data({'q': str(search_string)})['geonames'][0]
+            timezone = Geonames.find_timezone({'lat':location_data['lat'], 'lng':location_data['lng']})
+            self.log.info('get_timezone: Geonames API: ' + timezone['timezoneId'])
+            return pytz.timezone(timezone['timezoneId'])
+        except:
+            pass
+                
+        self.log.info('get_timezone: Final Timezone: None')
+        return None
+
+    def get_city_data(self, city, country=None):
+        country_code = None
+
+        if country:
+            country_code = self.country_list[str(country).lower()][0]
+        
+        results =  sorted(self.city2tz_list[str(city).lower()], key = lambda a: a[2], reverse = True)
+
+        if results:
+            for result in results:
+                if (country_code) and (result[1].decode('ascii') == country_code):
+                    return result
+
+            return results[0]
 
         return None
 
@@ -155,6 +225,63 @@ class TimeSkill(MycroftSkill):
             return None
 
         return dtUTC.astimezone(tz)
+
+    def get_locationtz_list(self, basename, geonames_url):
+        filename = basename + '.zip'
+        if not os.path.exists(filename):
+            self.log.info('Did it pass by here?')
+            urlretrieve(urljoin(geonames_url, filename), filename)
+
+        # parse it
+        city2tz = defaultdict(set)
+        ranking = (b'PPLQ', b'PPLH', b'PPLW', b'PPL', b'PPLX', b'PPLL', b'PPLS', b'STLMT', b'PPLF', b'PPLR', b'PPLA5', b'PPLA4', b'PPLA3', b'PPLA2', b'PPLA', b'PPLCH', b'PPLG', b'PPLC')
+
+        with ZipFile(filename) as zf, zf.open(basename + '.txt') as file:
+            for line in file:
+                fields = line.split(b'\t')
+                if fields:
+                    name, asciiname, alternatenames = (fields[1:4])
+                                
+                    try:
+                        featurecode = ranking.index(fields[7])
+                    except:
+                        featurecode = ranking.index(b'PPL')
+
+                    countrycode = fields[8]
+                    timezone = fields[-2].decode('utf-8').strip()
+
+                    if timezone:
+
+                        for city in [name, asciiname] + alternatenames.split(b','):
+                            city = city.decode('utf-8').strip()
+
+                            if city:
+                                city2tz[city.lower()].add((timezone, countrycode, featurecode))
+
+        zf.close()
+        return city2tz
+
+    def get_country_list(self, basename, geonames_url):
+        filename = basename + '.txt'
+        if not os.path.exists(filename):
+            urlretrieve(urljoin(geonames_url, filename), filename)
+
+        countries = {}
+        with open(filename, 'r') as file:
+            for line in file:
+                if line[0] == '#':
+                    continue
+
+                fields = line.split('\t')
+
+                if fields:
+                    country_name = fields[4]
+                    country_code = fields[0]
+                    capital = fields[5]
+
+                    if country_name:
+                        countries[country_name.lower()] = (country_code, capital.lower())
+        return countries
 
     def get_display_date(self, day=None, location=None):
         if not day:
@@ -336,16 +463,16 @@ class TimeSkill(MycroftSkill):
         self.answering_query = False
         self.displayed_time = None
 
-    #@intent_handler(IntentBuilder("handle_query_current_time").optionally("Query").require("Time").
-    #            optionally("Location"))
-    #def handle_query_current_time_adapt(self, message):
-    #    self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
-    #    self.handle_query_current_time(message)
-    
+    @intent_handler(IntentBuilder("current_time_handler_simple").
+                    require("Time").optionally("Location"))
+    def handle_current_time_simple(self, message):
+        self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
+        self.handle_query_current_time(message)
+
     @intent_file_handler("what.time.is.it.intent")
     def handle_query_current_time_padatious(self, message):
         self.log.info('Intent: Current Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
-        self.handle_query_current_time(message)
+        self.handle_query_time(message)
 
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
@@ -459,6 +586,56 @@ class TimeSkill(MycroftSkill):
         self.answering_query = False
         self.displayed_time = None
 
+    @intent_handler(IntentBuilder("").require("Query").require("Month"))
+    def handle_day_for_date(self, message):
+        self.handle_query_date(message)
+
+    @intent_handler(IntentBuilder("").require("Query").require("RelativeDay"))
+    def handle_query_relative_date(self, message):
+        self.handle_query_date(message)
+
+    @intent_handler(IntentBuilder("").require("RelativeDay").require("Date"))
+    def handle_query_relative_date_alt(self, message):
+        self.handle_query_date(message)
+
+    @intent_file_handler("date.future.weekend.intent")
+    def handle_date_future_weekend(self, message):
+        # Strip year off nice_date as request is inherently close
+        # Don't pass `now` to `nice_date` as a
+        # request on Friday will return "tomorrow"
+        saturday_date = ', '.join(nice_date(extract_datetime(
+                        'this saturday')[0]).split(', ')[:2])
+        sunday_date = ', '.join(nice_date(extract_datetime(
+                      'this sunday')[0]).split(', ')[:2])
+        self.speak_dialog('date.future.weekend', {
+            'direction': 'next',
+            'saturday_date': saturday_date,
+            'sunday_date': sunday_date
+        })
+
+    @intent_file_handler("date.last.weekend.intent")
+    def handle_date_last_weekend(self, message):
+        # Strip year off nice_date as request is inherently close
+        # Don't pass `now` to `nice_date` as a
+        # request on Monday will return "yesterday"
+        saturday_date = ', '.join(nice_date(extract_datetime(
+                        'this saturday')[0]).split(', ')[:2])
+        sunday_date = ', '.join(nice_date(extract_datetime(
+                      'this sunday')[0]).split(', ')[:2])
+        self.speak_dialog('date.last.weekend', {
+            'direction': 'last',
+            'saturday_date': saturday_date,
+            'sunday_date': sunday_date
+        })
+
+    @intent_handler(IntentBuilder("").require("Query").require("LeapYear"))
+    def handle_query_next_leap_year(self, message):
+        now = datetime.datetime.now()
+        leap_date = datetime.datetime(now.year, 2, 28)
+        year = now.year if now <= leap_date else now.year + 1
+        next_leap_year = self.get_next_leap_year(year)
+        self.speak_dialog('next.leap.year', {'year': next_leap_year})
+
     def show_date(self, location, day=None):
         if self.platform == "mycroft_mark_1":
             self.show_date_mark1(location, day)
@@ -483,6 +660,16 @@ class TimeSkill(MycroftSkill):
         if not day:
             day = self.get_local_datetime(location)
         return day.strftime("%Y")
+
+    def get_next_leap_year(self, year):
+        next_year = year + 1
+        if self.is_leap_year(next_year):
+            return next_year
+        else:
+            return self.get_next_leap_year(next_year)
+
+    def is_leap_year(self, year):
+        return (year % 400 == 0) or ((year % 4 == 0) and (year % 100 != 0))
 
     def show_date_gui(self, location, day):
         self.gui.clear()
