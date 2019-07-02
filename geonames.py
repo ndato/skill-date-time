@@ -52,6 +52,5 @@ class GeonamesClient(Api):
     def find_timezone(self, params):
         return self.call('timezoneJSON', params)
 
-        
     def get_location_data(self, params):
         return self.call('searchJSON', params)
