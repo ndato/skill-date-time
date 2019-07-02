@@ -38,14 +38,6 @@ from mycroft.util.parse import extract_datetime, fuzzy_match, extract_number, no
 from mycroft.util.time import now_utc, default_timezone, to_local
 from mycroft.skills.core import resting_screen_handler
 
-# For Location checking
-#from geonames import GeonamesClient
-import importlib.util
-pathname = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'geonames.py')
-
-geonames = importlib.util.spec_from_file_location("GeonamesClient", pathname)
-Geonames = importlib.util.module_from_spec(geonames)
-geonames.loader.exec_module(Geonames)
 
 class TimeSkill(MycroftSkill):
 
@@ -184,17 +176,7 @@ class TimeSkill(MycroftSkill):
             place = str(results[0][2]) + ' ' + str(results[0][0])
             self.log.info('get_timezone: Multi-locations: ' + str(results[0][3][0]))
             return (pytz.timezone(results[0][3][0]), place)
-        
-        # Use Geonames API as last resort
-        try:
-            location_data = Geonames.get_location_data({'q': str(search_string)})['geonames'][0]
-            place = location_data['toponymName'] + ' ' + location_data['countryName']
-            timezone = Geonames.find_timezone({'lat':location_data['lat'], 'lng':location_data['lng']})
-            self.log.info('get_timezone: Geonames API: ' + timezone['timezoneId'])
-            return (pytz.timezone(timezone['timezoneId']), place)
-        except:
-            pass
-                
+            
         self.log.info('get_timezone: Final Timezone: None')
         return None
 
