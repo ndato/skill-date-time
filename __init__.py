@@ -22,10 +22,6 @@ import holidays
 
 # for location handler
 import os, sys
-from collections import defaultdict
-from urllib.request   import urlretrieve
-from urllib.parse import urljoin
-from zipfile  import ZipFile
 
 from adapt.intent import IntentBuilder
 import mycroft.audio
@@ -55,13 +51,6 @@ class TimeSkill(MycroftSkill):
         self.displayed_time = None
         self.display_tz = None 
         self.answering_query = False
-
-        # for location handler
-        self.geonames_countryname = 'countryInfo'
-        self.geonames_city2tzname = 'cities15000'
-        self.geonames_url = 'http://download.geonames.org/export/dump/'
-        self.country_list = self.get_country_list(self.geonames_countryname, self.geonames_url)
-        self.city2tz_list = self.get_locationtz_list(self.geonames_city2tzname, self.geonames_url)
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -130,60 +119,6 @@ class TimeSkill(MycroftSkill):
                 # assumes translation is correct
                 self.log.info('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
                 return (pytz.timezone(timezones[timezone].strip()), locale)
-
-        # Match <Country> first using PyTZ and Geocode Country List by finding the Capital of the Country first
-        try:
-            capital = self.country_list[str(locale).lower()][1]
-            place = capital + ' ' + locale
-            result = self.get_city_data(capital, locale)
-            if result:
-                self.log.info('get_timezone: Final Timezone from Capital of the Country: ' + str(result[0]))
-                return (pytz.timezone(result[0]), place)
-        except:
-            pass
-
-        # Then match the <City> next
-        result = self.get_city_data(locale)
-        if result:
-            for key in self.country_list.keys():
-                if self.country_list[key][0] == result[1].decode('ascii'):
-                    country = key
-            place = locale + ' ' + country
-            self.log.info('get_timezone: Final Timezone from Geocode: ' + str(result[0]))
-            return (pytz.timezone(result[0]), place)
-
-        # If not, match different combinations
-        combinations = [
-            ['city', 'country'],
-            ['country', 'city'],
-        ]
-        locale_split = str(locale).lower().split(" ")
-        results = []
-        for i in range(0, len(locale_split)):
-            for combination in combinations:
-                locale_toparse = [" ".join(locale_split[:i]), " ".join(locale_split[i:])]
-                city = ''
-                country = ''
-
-                for index in range(0, len(combination)):
-                    if combination[index] == 'country':
-                        country = locale_toparse[index]
-                    elif combination[index] == 'city':
-                        city = locale_toparse[index]
-
-                try:
-                    country_data = self.country_list[str(country).lower()]
-                    city_data = self.get_city_data(str(city).lower(), country)
-                    #self.log.info('get_timezone: Multi-locations: ' + str(country_data) + ' ' +str(city_data))
-                    results.append([country, country_data, city, city_data])
-                except:
-                    pass
-        
-        if results:
-            results = sorted(results, key = lambda a: a[3][2], reverse = True)
-            place = str(results[0][2]) + ' ' + str(results[0][0])
-            self.log.info('get_timezone: Multi-locations: ' + str(results[0][3][0]))
-            return (pytz.timezone(results[0][3][0]), place)
         
         # Use Geonames API as last resort
         try:
@@ -196,26 +131,6 @@ class TimeSkill(MycroftSkill):
             pass
                 
         self.log.info('get_timezone: Final Timezone: None')
-        return None
-
-    def get_city_data(self, city, country=None):
-        country_code = None
-
-        if country:
-            country_code = self.country_list[str(country).lower()][0]
-        
-        results =  sorted(self.city2tz_list[str(city).lower()], key = lambda a: a[2], reverse = True)
-
-        if results:
-            for result in results:
-                if (country_code) and (result[1].decode('ascii') == country_code):
-                    return result
-
-            if (country_code) and (results[0].decode('ascii') != country_code):
-                return None
-            else:
-                return results[0]
-
         return None
 
     def get_local_datetime(self, location, dtUTC=None):
@@ -235,63 +150,6 @@ class TimeSkill(MycroftSkill):
                 return None
 
         return dtUTC.astimezone(tz)
-
-    def get_locationtz_list(self, basename, geonames_url):
-        filename = basename + '.zip'
-        if not os.path.exists(filename):
-            self.log.info('Did it pass by here?')
-            urlretrieve(urljoin(geonames_url, filename), filename)
-
-        # parse it
-        city2tz = defaultdict(set)
-        ranking = (b'PPLQ', b'PPLH', b'PPLW', b'PPL', b'PPLX', b'PPLL', b'PPLS', b'STLMT', b'PPLF', b'PPLR', b'PPLA5', b'PPLA4', b'PPLA3', b'PPLA2', b'PPLA', b'PPLCH', b'PPLG', b'PPLC')
-
-        with ZipFile(filename) as zf, zf.open(basename + '.txt') as file:
-            for line in file:
-                fields = line.split(b'\t')
-                if fields:
-                    name, asciiname, alternatenames = (fields[1:4])
-                                
-                    try:
-                        featurecode = ranking.index(fields[7])
-                    except:
-                        featurecode = ranking.index(b'PPL')
-
-                    countrycode = fields[8]
-                    timezone = fields[-2].decode('utf-8').strip()
-
-                    if timezone:
-
-                        for city in [name, asciiname] + alternatenames.split(b','):
-                            city = city.decode('utf-8').strip()
-
-                            if city:
-                                city2tz[city.lower()].add((timezone, countrycode, featurecode))
-
-        zf.close()
-        return city2tz
-
-    def get_country_list(self, basename, geonames_url):
-        filename = basename + '.txt'
-        if not os.path.exists(filename):
-            urlretrieve(urljoin(geonames_url, filename), filename)
-
-        countries = {}
-        with open(filename, 'r') as file:
-            for line in file:
-                if line[0] == '#':
-                    continue
-
-                fields = line.split('\t')
-
-                if fields:
-                    country_name = fields[4]
-                    country_code = fields[0]
-                    capital = fields[5]
-
-                    if country_name:
-                        countries[country_name.lower()] = (country_code, capital.lower())
-        return countries
 
     def get_display_date(self, day=None, location=None):
         if not day:
