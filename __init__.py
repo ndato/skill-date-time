@@ -33,15 +33,27 @@ from mycroft import MycroftSkill, intent_handler, intent_file_handler
 from mycroft.util.parse import extract_datetime, fuzzy_match, extract_number, normalize
 from mycroft.util.time import now_utc, default_timezone, to_local
 from mycroft.skills.core import resting_screen_handler
+from mycroft.api import Api
 
 # For Location checking
-#from geonames import GeonamesClient
-import importlib.util
-pathname = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'geonames.py')
+from geocoder import geonames
+from tzwhere import tzwhere
 
-geonames = importlib.util.spec_from_file_location("GeonamesClient", pathname)
-Geonames = importlib.util.module_from_spec(geonames)
-geonames.loader.exec_module(Geonames)
+class GeonamesAPI(Api):
+    def __init__(self, username):
+        super(GeonamesAPI, self).__init__("GeonamesAPI")
+        #Temporary test account. Need implementation from backend.
+        self.username = 'fs_ndato'
+        self.tz = tzwhere.tzwhere()
+
+    def get_location_data(search_string):
+        return geonames(search_string, maxRows=1, key=self.username)
+
+    def get_timezone(search_string):
+        location_data = get_location_data(search_string)
+        place = location_data.address + ' ' + location_data.country
+        timezone = self.tz.tzNameAt(float(location_data.lat) ,float(location_data.lng))
+        return (timezone, place)
 
 class TimeSkill(MycroftSkill):
 
@@ -62,6 +74,7 @@ class TimeSkill(MycroftSkill):
                                            now.hour, now.minute) +
                          datetime.timedelta(seconds=60))
         self.schedule_repeating_event(self.update_display, callback_time, 10)
+        self.Geonames = GeonamesAPI()
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -122,11 +135,8 @@ class TimeSkill(MycroftSkill):
         
         # Use Geonames API as last resort
         try:
-            location_data = Geonames.get_location_data({'q': str(search_string)})['geonames'][0]
-            place = location_data['toponymName'] + ' ' + location_data['countryName']
-            timezone = Geonames.find_timezone({'lat':location_data['lat'], 'lng':location_data['lng']})
-            self.log.info('get_timezone: Geonames API: ' + timezone['timezoneId'])
-            return (pytz.timezone(timezone['timezoneId']), place)
+            timezone, place = self.Geonames.get_timezone(locale)
+            return (pytz.timezone(timezone), place)
         except:
             pass
                 
