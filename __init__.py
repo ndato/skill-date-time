@@ -36,24 +36,9 @@ from mycroft.skills.core import resting_screen_handler
 from mycroft.api import Api
 
 # For Location checking
-from geocoder import geonames
+import geocoder
 from tzwhere import tzwhere
-
-class GeonamesAPI(Api):
-    def __init__(self, username):
-        super(GeonamesAPI, self).__init__("GeonamesAPI")
-        #Temporary test account. Need implementation from backend.
-        self.username = 'fs_ndato'
-        self.tz = tzwhere.tzwhere()
-
-    def get_location_data(search_string):
-        return geonames(search_string, maxRows=1, key=self.username)
-
-    def get_timezone(search_string):
-        location_data = get_location_data(search_string)
-        place = location_data.address + ' ' + location_data.country
-        timezone = self.tz.tzNameAt(float(location_data.lat) ,float(location_data.lng))
-        return (timezone, place)
+from countryinfo import CountryInfo
 
 class TimeSkill(MycroftSkill):
 
@@ -63,6 +48,10 @@ class TimeSkill(MycroftSkill):
         self.displayed_time = None
         self.display_tz = None 
         self.answering_query = False
+
+        #Temporary Implementation of Geonames API and TZWhere Library
+        self.username = 'fs_ndato'
+        self.tz = tzwhere.tzwhere()
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -74,7 +63,6 @@ class TimeSkill(MycroftSkill):
                                            now.hour, now.minute) +
                          datetime.timedelta(seconds=60))
         self.schedule_repeating_event(self.update_display, callback_time, 10)
-        self.Geonames = GeonamesAPI()
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -132,16 +120,41 @@ class TimeSkill(MycroftSkill):
                 # assumes translation is correct
                 self.log.info('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
                 return (pytz.timezone(timezones[timezone].strip()), locale)
-        
-        # Use Geonames API as last resort
+
+        # Check if locale given is a country. tznames does not get the correct timezone because the bounding box from the Geonames API
+        # gives the bounding box of the whole country. So we get the capital first, then get the timezone in the capital.
         try:
-            timezone, place = self.Geonames.get_timezone(locale)
-            return (pytz.timezone(timezone), place)
+            country = CountryInfo(locale)
+            locale = country.capital() + ' ' + locale
         except:
             pass
+        
+        # Use Geonames API as last resort
+        timezone, place = self.get_timezone_geonames(locale)
+        self.log.info('get_timezone: Geonames API: ' + timezone + ' ' + place)
+        if (timezone) and (place):
+            self.log.info('get_timezone: Final Timezone from Geonames API: ' + timezone)
+            return (pytz.timezone(timezone), place)
                 
         self.log.info('get_timezone: Final Timezone: None')
         return None
+
+    # Temporary implementation. Should be in the GeonamesAPI class
+    def get_location_data(self, search_string):
+        print('get_location_data: Got it from: ' + search_string)
+        return geocoder.geonames(search_string, maxRows=1, key=self.username)
+
+    # Temporary implementation. Should be in the GeonamesAPI class
+    def get_timezone_geonames(self, search_string):
+        location_data = self.get_location_data(search_string)
+
+        if (location_data.address == location_data.country):
+            place = location_data.country
+        else:
+            place = location_data.address + ' ' + location_data.country
+
+        timezone = self.tz.tzNameAt(float(location_data.lat) ,float(location_data.lng))
+        return (timezone, place)
 
     def get_local_datetime(self, location, dtUTC=None):
         if not dtUTC:

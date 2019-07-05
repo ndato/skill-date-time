@@ -4,3 +4,4 @@ astral==1.4
 holidays
 geocoder
 tzwhere
+countryinfo
