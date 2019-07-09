@@ -1,0 +1,1 @@
+(what (day|date) is|what (day|date)'s|when is|when's) {holiday} ((at|in|for) {location}|)

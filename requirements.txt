@@ -5,3 +5,4 @@ holidays
 geocoder
 tzwhere
 countryinfo
+python-holidayapi

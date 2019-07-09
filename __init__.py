@@ -40,6 +40,9 @@ import geocoder
 from tzwhere import tzwhere
 from countryinfo import CountryInfo
 
+# For Holiday Checking
+import holidayapi
+
 class TimeSkill(MycroftSkill):
 
     def __init__(self):
@@ -52,6 +55,9 @@ class TimeSkill(MycroftSkill):
         #Temporary Implementation of Geonames API and TZWhere Library
         self.username = 'fs_ndato'
         self.tz = tzwhere.tzwhere()
+
+        #Temporary Implementation of Holiday API
+        self.hapi = v1(open(self.find_resource('.holiday.api', '.')))
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -95,17 +101,17 @@ class TimeSkill(MycroftSkill):
         return self.config_core.get('time_format') == 'full'
 
     def get_timezone(self, locale):
-        self.log.info('get_timezone: Initial Locale: ' + str(locale))       
+        #self.log.info('get_timezone: Initial Locale: ' + str(locale))       
         try:
             # This handles codes like "America/Los_Angeles"
-            self.log.info('get_timezone: Final Timezone from PyTZ: ' + str(pytz.timezone(locale)))
+            #self.log.info('get_timezone: Final Timezone from PyTZ: ' + str(pytz.timezone(locale)))
             return (pytz.timezone(locale), locale)
         except:
             pass
 
         try:
             # This handles common city names, like "Dallas" or "Paris"
-            self.log.info('get_timezone: Final Timezone from Astral: ' + str(self.astral[locale].timezone))
+            #self.log.info('get_timezone: Final Timezone from Astral: ' + str(self.astral[locale].timezone))
             return (pytz.timezone(self.astral[locale].timezone), locale)
         except:
             pass
@@ -118,7 +124,7 @@ class TimeSkill(MycroftSkill):
         for timezone in timezones:
             if locale.lower() == timezone.lower():
                 # assumes translation is correct
-                self.log.info('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
+                #self.log.info('get_timezone: Final Timezone from Timezone Values: ' + timezones[timezone].strip())
                 return (pytz.timezone(timezones[timezone].strip()), locale)
 
         # Check if locale given is a country. tznames does not get the correct timezone because the bounding box from the Geonames API
@@ -131,12 +137,11 @@ class TimeSkill(MycroftSkill):
         
         # Use Geonames API as last resort
         timezone, place = self.get_timezone_geonames(locale)
-        self.log.info('get_timezone: Geonames API: ' + timezone + ' ' + place)
         if (timezone) and (place):
-            self.log.info('get_timezone: Final Timezone from Geonames API: ' + timezone)
+            #self.log.info('get_timezone: Final Timezone from Geonames API: ' + timezone)
             return (pytz.timezone(timezone), place)
                 
-        self.log.info('get_timezone: Final Timezone: None')
+        #self.log.info('get_timezone: Final Timezone: None')
         return None
 
     # Temporary implementation. Should be in the GeonamesAPI class
@@ -479,6 +484,16 @@ class TimeSkill(MycroftSkill):
             self.enclosure.activate_mouth_events()
         self.answering_query = False
         self.displayed_time = None
+
+    @intent_file_handler("when.is.holiday.intent")
+    def handle_query_holiday_date(self, message):
+        self.log.info("handle_query_holiday_date: Query is Holiday")
+        current_year = datetime.today().year
+
+    @intent_handler(IntentBuilder("").require("Query").require("Month").
+                    optionally("Location"))
+    def handle_day_for_date(self, message):
+        self.handle_query_date(message)
 
     @intent_handler(IntentBuilder("").require("Query").require("Month"))
     def handle_day_for_date(self, message):
