@@ -41,7 +41,7 @@ from tzwhere import tzwhere
 from countryinfo import CountryInfo
 
 # For Holiday Checking
-import holidayapi
+from .holidayapi import v1
 
 class TimeSkill(MycroftSkill):
 
@@ -52,12 +52,9 @@ class TimeSkill(MycroftSkill):
         self.display_tz = None 
         self.answering_query = False
 
-        #Temporary Implementation of Geonames API and TZWhere Library
-        self.username = 'fs_ndato'
-        self.tz = tzwhere.tzwhere()
-
-        #Temporary Implementation of Holiday API
-        self.hapi = v1(open(self.find_resource('.holiday.api', '.')))
+        self.holiday_cache = []
+        self.holiday_cache_country_list = {}
+        self.country_list = {}
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -69,6 +66,23 @@ class TimeSkill(MycroftSkill):
                                            now.hour, now.minute) +
                          datetime.timedelta(seconds=60))
         self.schedule_repeating_event(self.update_display, callback_time, 10)
+
+        #Get all Country Names
+        self.country_list = self.get_country_list()
+        #self.log.info("initialize: Country List length: " + str(len(self.country_list)))
+
+        #Temporary Implementation of Geonames API and TZWhere Library
+        file = open(os.path.join(self.root_dir, 'geonames.key')) 
+        self.username = file.read()
+        file.close()
+        self.tz = tzwhere.tzwhere()
+
+        #Temporary Implementation of Holiday API
+        file = open(os.path.join(self.root_dir, 'holidayapi.key'))
+        self.hapi = v1(file.read())
+        file.close()
+        self.get_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year)
+        #self.log.info("initialize: Holiday List length: " + str(len(self.holiday_cache)))
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -146,7 +160,7 @@ class TimeSkill(MycroftSkill):
 
     # Temporary implementation. Should be in the GeonamesAPI class
     def get_location_data(self, search_string):
-        print('get_location_data: Got it from: ' + search_string)
+        #self.log.info('get_location_data: Got it from: ' + search_string)
         return geocoder.geonames(search_string, maxRows=1, key=self.username)
 
     # Temporary implementation. Should be in the GeonamesAPI class
@@ -178,6 +192,46 @@ class TimeSkill(MycroftSkill):
                 return None
 
         return dtUTC.astimezone(tz)
+
+    def get_country_list(self):
+        country_list_temp = dict()
+
+        for country in CountryInfo().all():
+            #self.log.info(country)
+            if str(country).lower().lstrip() != '':
+                country_list_temp.update({str(country).lower().lstrip(): CountryInfo(country).iso(2)})
+            
+            try:
+                for alt_spelling in CountryInfo(country).alt_spellings():
+                    #self.log.info(alt_spelling)
+                    if str(alt_spelling).lower().lstrip() != '':
+                        country_list_temp.update({str(alt_spelling).lower().lstrip(): CountryInfo(country).iso(2)})
+            except:
+                #self.log.info("No Alternative Spelling for: " + str(country))
+                pass
+
+            try:
+                #self.log.info(CountryInfo(country).native_name())
+                if str(CountryInfo(country).native_name().lstrip()) != '':
+                    country_list_temp.update({str(CountryInfo(country).native_name().lstrip()).lower(): CountryInfo(country).iso(2)})
+            except:
+                #self.log.info("No Native Name for: " + str(country))
+                pass
+            
+        #self.log.info("get_country_list: Country List length: " + str(len(country_list_temp)))
+        return country_list_temp
+
+    def get_country_code(self, country_string): 
+        while (len(self.country_list) == 0):
+            time.sleep(0.25)
+
+        #self.log.info('get_country_code: Getting String: ' + country_string)
+        try:
+            #self.log.info('get_country_code: Got String: ' + self.country_list[str(country_string).lower()])
+            return self.country_list[str(country_string).lower()]
+        except:
+            #self.log.info('get_country_code: String Not Found: ' + str(country_string))
+            return None
 
     def get_display_date(self, day=None, location=None):
         if not day:
@@ -371,18 +425,18 @@ class TimeSkill(MycroftSkill):
     @intent_handler(IntentBuilder("current_time_handler_simple").
                     require("Time").optionally("Location"))
     def handle_current_time_simple(self, message):
-        self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
+        #self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
         self.handle_query_current_time(message)
 
     @intent_file_handler("what.time.is.it.intent")
     def handle_query_current_time_padatious(self, message):
-        self.log.info('Intent: Current Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
+        #self.log.info('Intent: Current Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
         self.handle_query_current_time(message)
 
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
         #self.log.info(message.data.get('Location'))
-        self.log.info(message.data.get('Offset'))
+        #self.log.info(message.data.get('Offset'))
         extract = extract_datetime(utt)
         if extract:
             dt = extract[0]
@@ -408,7 +462,7 @@ class TimeSkill(MycroftSkill):
 
     @intent_file_handler("what.time.will.it.be.intent")
     def handle_query_future_time_padatious(self, message):
-        self.log.info('Intent: Future Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
+        #self.log.info('Intent: Future Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
         self.handle_query_future_time(message)
 
     @intent_handler(IntentBuilder("").require("Display").require("Time").
@@ -485,11 +539,6 @@ class TimeSkill(MycroftSkill):
         self.answering_query = False
         self.displayed_time = None
 
-    @intent_file_handler("when.is.holiday.intent")
-    def handle_query_holiday_date(self, message):
-        self.log.info("handle_query_holiday_date: Query is Holiday")
-        current_year = datetime.today().year
-
     @intent_handler(IntentBuilder("").require("Query").require("Month").
                     optionally("Location"))
     def handle_day_for_date(self, message):
@@ -544,6 +593,84 @@ class TimeSkill(MycroftSkill):
         year = now.year if now <= leap_date else now.year + 1
         next_leap_year = self.get_next_leap_year(year)
         self.speak_dialog('next.leap.year', {'year': next_leap_year})
+    
+    @intent_file_handler("when.is.holiday.intent")
+    def handle_query_holiday_date(self, message):
+        holiday = message.data.get('holiday')
+        location = message.data.get('location')
+        #self.log.info("handle_query_holiday_date: Query is Holiday. Holiday: " +  str(holiday) + " Location: " +  str(location))
+        #self.log.info("handle_query_holiday_date: Default Location: " +  str(self.location['city']['state']['country']))
+
+        country_code = None
+
+        if location == None:
+            #self.log.info("handle_query_holiday_date: No Location")
+            country_code = self.location['city']['state']['country']['code']
+        else:
+            country_code = self.get_country_code(location)
+            if country_code == None:
+                #self.log.info("handle_query_holiday_date: Location not found: " + str(holiday) + ' ' + str(location))
+                self.speak_dialog('holiday.with.location.not.found', {"holiday": str(holiday), "location": str(location)})
+                return
+
+        holiday_date = self.find_holiday_date(holiday.lower(), country_code)
+
+        if holiday_date != None:
+            #self.log.info("handle_query_holiday_date: Holiday found: " + str(holiday) + " Location: " + str(location) + " Date: " + str(holiday_date))
+            if location == None:
+                self.speak_dialog('holiday.date', {"holiday": str(holiday), "date": nice_date(datetime.datetime.strptime(holiday_date, '%Y-%m-%d'))})
+            else:
+                self.speak_dialog('holiday.date.with.location', {"holiday": str(holiday), "location": str(location), "date": nice_date(datetime.datetime.strptime(holiday_date, '%Y-%m-%d'))})
+        else:
+            #self.log.info("handle_query_holiday_date: Holiday not found: " + str(holiday) )
+            if location == None:
+                self.speak_dialog('holiday.not.found', {"holiday": str(holiday)})
+            else:
+                self.speak_dialog('holiday.with.location.not.found', {"holiday": str(holiday), "location": str(location)})
+
+
+    def get_holiday_list(self, country_code, year):
+        #self.log.info('get_holiday_list: Getting Holiday List: ' + location + ' ' + str(year))
+        parameters = {
+            'country':  country_code,
+            'year':     year,
+            'pretty':   True,
+        }
+        holiday_initial = []
+        while (len(holiday_initial) == 0):
+            try:
+                holiday_initial = self.hapi.holidays(parameters)
+            except:
+                pass
+            time.sleep(0.25)
+
+        #for holiday in holiday_initial['holidays']:
+        #    self.log.info(str(holiday))
+
+        self.holiday_cache.extend(holiday_initial['holidays'])
+        if (country_code in self.holiday_cache_country_list):
+            if (year in self.holiday_cache_country_list[country_code]):
+                self.holiday_cache_country_list[country_code].append(year)
+        else:
+            self.holiday_cache_country_list.update({country_code: [year]})
+
+    def find_holiday_date(self, holiday_string, country_code):
+        #self.log.info("find_holiday_date: Got the following: Holiday String: " + str(holiday_string) + " Country Code: " + str(country_code))
+        #self.log.info("find_holiday_date: Holiday List length: " + str(len(self.holiday_cache)))
+        year = datetime.datetime.now().year
+
+        if (country_code not in self.holiday_cache_country_list) or (year not in self.holiday_cache_country_list[country_code]):
+            #self.log.info("find_holiday_date: Had to retrieve : " + str(country_code))
+            self.get_holiday_list(country_code, year)
+
+        for holiday in self.holiday_cache:
+            #self.log.info("find_holiday_date: Comparing with: " + str(holiday))
+            if (holiday['name'].replace('\'', '').lower() == holiday_string.replace('\'', '').lower()) and (holiday['country'] == country_code):
+                #self.log.info("find_holiday_date: Found: " + str(holiday['date']))
+                return holiday['date']
+
+        #self.log.info("find_holiday_date: Not Found")
+        return None
 
     def show_date(self, location, day=None):
         if self.platform == "mycroft_mark_1":
