@@ -6,3 +6,5 @@ geocoder
 tzwhere
 countryinfo
 python-holidayapi
+fuzzywuzzy
+python-Levenshtein

@@ -41,7 +41,8 @@ from tzwhere import tzwhere
 from countryinfo import CountryInfo
 
 # For Holiday Checking
-from .holidayapi import v1
+from holidayapi import v1
+from fuzzywuzzy import fuzz
 
 class TimeSkill(MycroftSkill):
 
@@ -73,7 +74,7 @@ class TimeSkill(MycroftSkill):
 
         #Temporary Implementation of Geonames API and TZWhere Library
         file = open(os.path.join(self.root_dir, 'geonames.key')) 
-        self.username = file.read()
+        self.username = file.read() 
         file.close()
         self.tz = tzwhere.tzwhere()
 
