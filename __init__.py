@@ -53,9 +53,11 @@ class TimeSkill(MycroftSkill):
         self.display_tz = None 
         self.answering_query = False
 
-        self.holiday_cache = []
+        self.holiday_cache = {}
         self.holiday_cache_country_list = {}
         self.country_list = {}
+
+        self.holiday_confidence = 70
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -82,8 +84,10 @@ class TimeSkill(MycroftSkill):
         file = open(os.path.join(self.root_dir, 'holidayapi.key'))
         self.hapi = v1(file.read())
         file.close()
-        self.get_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year)
+        self.update_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year)
         #self.log.info("initialize: Holiday List length: " + str(len(self.holiday_cache)))
+
+        self.register_intent_file('when.is.holiday.intent', self.handle_query_holiday_date)
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -168,7 +172,7 @@ class TimeSkill(MycroftSkill):
     def get_timezone_geonames(self, search_string):
         location_data = self.get_location_data(search_string)
 
-        if (location_data.address == location_data.country):
+        if (location_data.address == location_data.country): 
             place = location_data.country
         else:
             place = location_data.address + ' ' + location_data.country
@@ -595,7 +599,6 @@ class TimeSkill(MycroftSkill):
         next_leap_year = self.get_next_leap_year(year)
         self.speak_dialog('next.leap.year', {'year': next_leap_year})
     
-    @intent_file_handler("when.is.holiday.intent")
     def handle_query_holiday_date(self, message):
         holiday = message.data.get('holiday')
         location = message.data.get('location')
@@ -630,48 +633,55 @@ class TimeSkill(MycroftSkill):
                 self.speak_dialog('holiday.with.location.not.found', {"holiday": str(holiday), "location": str(location)})
 
 
-    def get_holiday_list(self, country_code, year):
-        #self.log.info('get_holiday_list: Getting Holiday List: ' + location + ' ' + str(year))
+    def update_holiday_list(self, country_code, year):
+        #self.log.info('update_holiday_list: Getting Holiday List: ' + country_code + ' ' + str(year))
         parameters = {
             'country':  country_code,
             'year':     year,
             'pretty':   True,
         }
-        holiday_initial = []
-        while (len(holiday_initial) == 0):
-            try:
-                holiday_initial = self.hapi.holidays(parameters)
-            except:
-                pass
-            time.sleep(0.25)
 
-        #for holiday in holiday_initial['holidays']:
+        try:
+            if (self.holiday_cache.get(country_code)):
+                if (self.holiday_cache[country_code].get(year) == None):
+                    self.holiday_cache[country_code].update({year: self.hapi.holidays(parameters)['holidays']})
+            else:
+                self.holiday_cache.update({country_code: {year: self.hapi.holidays(parameters)['holidays']}})
+        except ConnectionError as e:
+            time.sleep(0.5) 
+            self.log.info('update_holiday_list: Reconnecting ...')
+            self.update_holiday_list(country_code, year)
+      
+        #for holiday in self.holiday_cache[country_code][year]:
         #    self.log.info(str(holiday))
-
-        self.holiday_cache.extend(holiday_initial['holidays'])
-        if (country_code in self.holiday_cache_country_list):
-            if (year in self.holiday_cache_country_list[country_code]):
-                self.holiday_cache_country_list[country_code].append(year)
-        else:
-            self.holiday_cache_country_list.update({country_code: [year]})
 
     def find_holiday_date(self, holiday_string, country_code):
         #self.log.info("find_holiday_date: Got the following: Holiday String: " + str(holiday_string) + " Country Code: " + str(country_code))
-        #self.log.info("find_holiday_date: Holiday List length: " + str(len(self.holiday_cache)))
         year = datetime.datetime.now().year
 
-        if (country_code not in self.holiday_cache_country_list) or (year not in self.holiday_cache_country_list[country_code]):
+        if (self.holiday_cache.get(country_code) == None) or (self.holiday_cache[country_code].get(year) == None):
             #self.log.info("find_holiday_date: Had to retrieve : " + str(country_code))
-            self.get_holiday_list(country_code, year)
+            self.update_holiday_list(country_code, year)
 
-        for holiday in self.holiday_cache:
+        highest_Token_Set_Ratio = 0
+        nearest_match = ''
+
+        for holiday in self.holiday_cache[country_code][year]:
             #self.log.info("find_holiday_date: Comparing with: " + str(holiday))
-            if (holiday['name'].replace('\'', '').lower() == holiday_string.replace('\'', '').lower()) and (holiday['country'] == country_code):
+            if (holiday['name'].replace('\'', '').lower() == holiday_string.replace('\'', '').lower()):
                 #self.log.info("find_holiday_date: Found: " + str(holiday['date']))
                 return holiday['date']
+            else:
+                current_Token_Set_Ratio = fuzz.token_set_ratio(holiday['name'].replace('\'', '').lower(), holiday_string.replace('\'', '').lower())
+                if (current_Token_Set_Ratio > highest_Token_Set_Ratio):
+                    highest_Token_Set_Ratio = current_Token_Set_Ratio
+                    nearest_match = holiday['date']
 
-        #self.log.info("find_holiday_date: Not Found")
-        return None
+        if highest_Token_Set_Ratio >= self.holiday_confidence:
+            return nearest_match
+        else:
+            #self.log.info("find_holiday_date: Not Found")
+            return None
 
     def show_date(self, location, day=None):
         if self.platform == "mycroft_mark_1":
