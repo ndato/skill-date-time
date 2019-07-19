@@ -38,6 +38,7 @@ from mycroft.api import Api
 # For Location checking
 import geocoder
 from tzwhere import tzwhere
+import numpy
 from countryinfo import CountryInfo
 
 # For Holiday Checking
@@ -54,7 +55,6 @@ class TimeSkill(MycroftSkill):
         self.answering_query = False
 
         self.holiday_cache = {}
-        self.holiday_cache_country_list = {}
         self.country_list = {}
 
         self.holiday_confidence = 70
@@ -75,15 +75,11 @@ class TimeSkill(MycroftSkill):
         #self.log.info("initialize: Country List length: " + str(len(self.country_list)))
 
         #Temporary Implementation of Geonames API and TZWhere Library
-        file = open(os.path.join(self.root_dir, 'geonames.key')) 
-        self.username = file.read() 
-        file.close()
+        self.username = self.settings["geonames_api_key"]
         self.tz = tzwhere.tzwhere()
 
         #Temporary Implementation of Holiday API
-        file = open(os.path.join(self.root_dir, 'holidayapi.key'))
-        self.hapi = v1(file.read())
-        file.close()
+        self.hapi = v1(self.settings["holiday_api_key"])
         self.update_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year)
         #self.log.info("initialize: Holiday List length: " + str(len(self.holiday_cache)))
 
@@ -166,7 +162,15 @@ class TimeSkill(MycroftSkill):
     # Temporary implementation. Should be in the GeonamesAPI class
     def get_location_data(self, search_string):
         #self.log.info('get_location_data: Got it from: ' + search_string)
-        return geocoder.geonames(search_string, maxRows=1, key=self.username)
+        result = []
+        try:
+            result = geocoder.geonames(search_string, maxRows=1, key=self.username)
+        except ConnectionError as e:
+            time.sleep(0.5) 
+            self.log.info('get_location_data: Reconnecting ...')
+            self.get_location_data(search_string)
+
+        return result
 
     # Temporary implementation. Should be in the GeonamesAPI class
     def get_timezone_geonames(self, search_string):
@@ -504,20 +508,6 @@ class TimeSkill(MycroftSkill):
         year = extract_number(utt)
         if not year or year < 1500 or year > 3000:  # filter out non-years
             year = day.year
-        all = {}
-        # TODO: How to pick a location for holidays?
-        for st in holidays.US.STATES:
-            l = holidays.US(years=[year], state=st)
-            for d, name in l.items():
-                if not name in all:
-                    all[name] = d
-        for name in all:
-            d = all[name]
-            # Uncomment to display all holidays in the database
-            # self.log.info("Day, name: " +str(d) + " " + str(name))
-            if name.replace(" Day", "").lower() in utt:
-                day = d
-                break
 
         location = self._extract_location(utt)
         if location:

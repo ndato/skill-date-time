@@ -1,5 +1,5 @@
 {
-    "name": "Date and Time",
+    "name": "Date and Time - BJ",
     "color": "#22a7f0",
     "skillMetadata": {
         "sections": [
@@ -11,6 +11,28 @@
                         "type": "checkbox",
                         "label": "Show digital clock when idle",
                         "value": "false"
+                    }
+                ]
+            },
+            {
+                "name": "Geonames API",
+                "fields": [
+                    {
+                        "name": "geonames_api_key",
+                        "type": "password",
+                        "label": "Geonames.org Username",
+                        "value": ""
+                    }
+                ]
+            },
+            {
+                "name": "Holiday",
+                "fields": [
+                    {
+                        "name": "holiday_api_key",
+                        "type": "password",
+                        "label": "Holidays API Key",
+                        "value": ""
                     }
                 ]
             }

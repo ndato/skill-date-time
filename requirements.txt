@@ -4,6 +4,7 @@ astral==1.4
 holidays
 geocoder
 tzwhere
+numpy
 countryinfo
 python-holidayapi
 fuzzywuzzy
