@@ -33,17 +33,16 @@ from mycroft import MycroftSkill, intent_handler, intent_file_handler
 from mycroft.util.parse import extract_datetime, fuzzy_match, extract_number, normalize
 from mycroft.util.time import now_utc, default_timezone, to_local
 from mycroft.skills.core import resting_screen_handler
+from mycroft.util.parse import match_one
 from mycroft.api import Api
 
 # For Location checking
 import geocoder
 from tzwhere import tzwhere
 import numpy
-from countryinfo import CountryInfo
 
 # For Holiday Checking
 from holidayapi import v1
-from fuzzywuzzy import fuzz
 
 class TimeSkill(MycroftSkill):
 
@@ -57,7 +56,7 @@ class TimeSkill(MycroftSkill):
         self.holiday_cache = {}
         self.country_list = {}
 
-        self.holiday_confidence = 70
+        self.holiday_confidence = 0.70
 
     def initialize(self):
         # Start a callback that repeats every 10 seconds
@@ -69,9 +68,11 @@ class TimeSkill(MycroftSkill):
                                            now.hour, now.minute) +
                          datetime.timedelta(seconds=60))
         self.schedule_repeating_event(self.update_display, callback_time, 10)
-
         #Get all Country Names
-        self.country_list = self.get_country_list()
+        
+        start_time = time.time()
+
+        self.country_list = self.translate_namedvalues('countries')
         #self.log.info("initialize: Country List length: " + str(len(self.country_list)))
 
         #Temporary Implementation of Geonames API and TZWhere Library
@@ -81,9 +82,12 @@ class TimeSkill(MycroftSkill):
         #Temporary Implementation of Holiday API
         self.hapi = v1(self.settings["holiday_api_key"])
         self.update_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year)
+        self.update_holiday_list(self.location['city']['state']['country']['code'], datetime.datetime.now().year + 1)
         #self.log.info("initialize: Holiday List length: " + str(len(self.holiday_cache)))
 
         self.register_intent_file('when.is.holiday.intent', self.handle_query_holiday_date)
+
+        self.log.info("initialize: Run time before loading: " + str(time.time() - start_time) + " seconds")
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -437,11 +441,6 @@ class TimeSkill(MycroftSkill):
         #self.log.info('Intent: Current Time, Parser: Adapt, Utterance: ' + message.data.get('utterance', "").lower())
         self.handle_query_current_time(message)
 
-    @intent_file_handler("what.time.is.it.intent")
-    def handle_query_current_time_padatious(self, message):
-        #self.log.info('Intent: Current Time, Parser: Padatious, Utterance: ' + message.data.get('utterance', "").lower())
-        self.handle_query_current_time(message)
-
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
         #self.log.info(message.data.get('Location'))
@@ -591,7 +590,7 @@ class TimeSkill(MycroftSkill):
     
     def handle_query_holiday_date(self, message):
         holiday = message.data.get('holiday')
-        location = message.data.get('location')
+        location = message.data.get('location') 
         #self.log.info("handle_query_holiday_date: Query is Holiday. Holiday: " +  str(holiday) + " Location: " +  str(location))
         #self.log.info("handle_query_holiday_date: Default Location: " +  str(self.location['city']['state']['country']))
 
@@ -607,7 +606,8 @@ class TimeSkill(MycroftSkill):
                 self.speak_dialog('holiday.with.location.not.found', {"holiday": str(holiday), "location": str(location)})
                 return
 
-        holiday_date = self.find_holiday_date(holiday.lower(), country_code)
+        year = datetime.datetime.now().year
+        holiday_date = self.find_holiday_date(holiday.lower(), country_code, year)
 
         if holiday_date != None:
             #self.log.info("handle_query_holiday_date: Holiday found: " + str(holiday) + " Location: " + str(location) + " Date: " + str(holiday_date))
@@ -645,32 +645,39 @@ class TimeSkill(MycroftSkill):
         #for holiday in self.holiday_cache[country_code][year]:
         #    self.log.info(str(holiday))
 
-    def find_holiday_date(self, holiday_string, country_code):
-        #self.log.info("find_holiday_date: Got the following: Holiday String: " + str(holiday_string) + " Country Code: " + str(country_code))
-        year = datetime.datetime.now().year
+    def find_holiday_date(self, holiday_string, country_code, year):
+        self.log.info("find_holiday_date: Got the following: Holiday String: " + str(holiday_string) + " Country Code: " + str(country_code))
 
         if (self.holiday_cache.get(country_code) == None) or (self.holiday_cache[country_code].get(year) == None):
-            #self.log.info("find_holiday_date: Had to retrieve : " + str(country_code))
+            self.log.info("find_holiday_date: Had to retrieve : " + str(country_code))
             self.update_holiday_list(country_code, year)
 
         highest_Token_Set_Ratio = 0
         nearest_match = ''
 
-        for holiday in self.holiday_cache[country_code][year]:
-            #self.log.info("find_holiday_date: Comparing with: " + str(holiday))
-            if (holiday['name'].replace('\'', '').lower() == holiday_string.replace('\'', '').lower()):
-                #self.log.info("find_holiday_date: Found: " + str(holiday['date']))
-                return holiday['date']
-            else:
-                current_Token_Set_Ratio = fuzz.token_set_ratio(holiday['name'].replace('\'', '').lower(), holiday_string.replace('\'', '').lower())
-                if (current_Token_Set_Ratio > highest_Token_Set_Ratio):
-                    highest_Token_Set_Ratio = current_Token_Set_Ratio
-                    nearest_match = holiday['date']
+        holiday_list = []
 
-        if highest_Token_Set_Ratio >= self.holiday_confidence:
-            return nearest_match
+        for holiday in self.holiday_cache[country_code][year]:
+            holiday_list.append(holiday['name'].replace('\'', '').lower())
+
+        match, confidence = match_one(holiday_string.replace('\'', '').lower(), holiday_list)
+        self.log.info("find_holiday_date: Match: " + str(match))
+        self.log.info("find_holiday_date: Confidence: " + str(confidence))
+
+        if (confidence >= self.holiday_confidence):
+            now = datetime.datetime.now()
+            holiday_date_str = self.holiday_cache[country_code][year][holiday_list.index(match)]['date']
+            holiday_date = datetime.datetime.strptime(holiday_date_str, '%Y-%m-%d')
+            difference = now - holiday_date
+
+            if (difference.total_seconds() > 0):
+                self.log.info("find_holiday_date: Exact Check next year: " + str(holiday_date_str))
+                return self.find_holiday_date(holiday_string, country_code, year + 1)
+            else:
+                self.log.info("find_holiday_date: Exact Found: " + str(holiday_date_str))
+                return holiday_date_str
         else:
-            #self.log.info("find_holiday_date: Not Found")
+            self.log.info("find_holiday_date: Not Found")
             return None
 
     def show_date(self, location, day=None):

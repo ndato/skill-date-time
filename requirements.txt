@@ -5,7 +5,4 @@ holidays
 geocoder
 tzwhere
 numpy
-countryinfo
 python-holidayapi
-fuzzywuzzy
-python-Levenshtein
