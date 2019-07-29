@@ -61,7 +61,6 @@ class TimeSkill(MycroftSkill):
         # TODO: Add mechanism to only start timer when UI setting
         #       is checked, but this requires a notifier for settings
         #       updates from the web.
-        start_time = time.time()
         
         now = datetime.datetime.now()
         callback_time = (datetime.datetime(now.year, now.month, now.day,
@@ -81,9 +80,9 @@ class TimeSkill(MycroftSkill):
 
         # Make Holiday Handlers available after Holiday API is done loading
         self.register_intent_file('when.is.holiday.intent', self.handle_query_holiday_date)
-        
-        self.log.info("initialize: Run time before loading: " + str(time.time()
-                    - start_time) + " seconds")
+        #intent = IntentBuilder("").require("Query").optionally("Date") \
+        #            .require("Holiday").optionally("Location")
+        #self.register_intent(intent, self.handle_query_holiday_date)
 
     # TODO:19.08 Moved to MycroftSkill
     @property
@@ -400,6 +399,7 @@ class TimeSkill(MycroftSkill):
         self.handle_query_current_time(message)
 
     # Future Time Intent Handlers
+    @intent_file_handler("what.time.will.it.be.intent")
     def handle_query_future_time(self, message):
         utt = normalize(message.data.get('utterance', "").lower())
         extract = extract_datetime(utt)
@@ -426,10 +426,6 @@ class TimeSkill(MycroftSkill):
         self.enclosure.activate_mouth_events()
         self.answering_query = False
         self.displayed_time = None
-
-    @intent_file_handler("what.time.will.it.be.intent")
-    def handle_query_future_time_padatious(self, message):
-        self.handle_query_future_time(message)
 
     @intent_handler(IntentBuilder("").require("Display").require("Time").
                     optionally("Location"))
@@ -504,11 +500,13 @@ class TimeSkill(MycroftSkill):
     def handle_query_relative_date(self, message):
         self.handle_query_date(message)
 
-    @intent_handler(IntentBuilder("").require("RelativeDay").require("Date"))
+    @intent_handler(IntentBuilder("").optionally("Query").require("Date")
+                    .require("RelativeDay"))
     def handle_query_relative_date_alt(self, message):
         self.handle_query_date(message)
-
-    @intent_file_handler("date.future.weekend.intent")
+        
+    @intent_handler(IntentBuilder("").optionally("Query").require("Dates")
+                .require("Future").require("Weekend"))
     def handle_date_future_weekend(self, message):
         # Strip year off nice_date as request is inherently close
         # Don't pass `now` to `nice_date` as a
@@ -522,16 +520,17 @@ class TimeSkill(MycroftSkill):
             'saturday_date': saturday_date,
             'sunday_date': sunday_date
         })
-
-    @intent_file_handler("date.last.weekend.intent")
+    
+    @intent_handler(IntentBuilder("").optionally("Query").require("Dates")
+                .require("Past").require("Weekend"))
     def handle_date_last_weekend(self, message):
         # Strip year off nice_date as request is inherently close
         # Don't pass `now` to `nice_date` as a
         # request on Monday will return "yesterday"
         saturday_date = ', '.join(nice_date(extract_datetime(
-                        'this saturday')[0]).split(', ')[:2])
+                        'last saturday')[0]).split(', ')[:2])
         sunday_date = ', '.join(nice_date(extract_datetime(
-                      'this sunday')[0]).split(', ')[:2])
+                      'last sunday')[0]).split(', ')[:2])
         self.speak_dialog('date.last.weekend', {
             'direction': 'last',
             'saturday_date': saturday_date,
@@ -551,8 +550,9 @@ class TimeSkill(MycroftSkill):
     ## Holiday queries
     
     def handle_query_holiday_date(self, message):
-        holiday = message.data.get('holiday')
-        location = message.data.get('location')
+        holiday = message.data.get('Holiday')
+        location = message.data.get('Location')
+        self.log.info(f"handle_query_holiday_date: holiday: {holiday} location: {location}")
         country_code = None
 
         if location == None:
