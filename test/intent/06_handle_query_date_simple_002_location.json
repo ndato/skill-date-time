@@ -1,0 +1,5 @@
+{
+	"utterance": "tell me what day it is in Honolulu",
+	"intent_type": "handle_query_date_simple",
+	"expected_dialog": "date"
+}

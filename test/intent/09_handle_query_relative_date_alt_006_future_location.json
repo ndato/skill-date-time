@@ -1,0 +1,5 @@
+{
+	"utterance": "Sunday's date at Pago Pago",
+	"intent_type": "handle_query_relative_date_alt",
+	"expected_dialog": "date.relative.future"
+}

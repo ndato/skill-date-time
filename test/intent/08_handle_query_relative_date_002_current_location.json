@@ -1,0 +1,5 @@
+{
+	"utterance": "what's the day today in Pago Pago",
+	"intent_type": "handle_query_relative_date",
+	"expected_dialog": "date"
+}

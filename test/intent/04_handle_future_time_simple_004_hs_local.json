@@ -1,0 +1,5 @@
+{
+	"utterance": "time 10 hours and 10 seconds from now",
+	"intent_type": "future_time_handler_simple",
+	"expected_dialog": "time.future"
+}

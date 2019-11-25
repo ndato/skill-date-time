@@ -1,0 +1,5 @@
+{
+	"utterance": "what's the time in 10 minutes from now",
+	"intent_type": "what.time.will.it.be.intent",
+	"expected_dialog": "time.future"
+}

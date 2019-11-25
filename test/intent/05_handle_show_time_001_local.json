@@ -1,0 +1,4 @@
+{
+	"utterance": "show clock",
+	"intent_type": "handle_show_time"
+}

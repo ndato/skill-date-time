@@ -1,0 +1,5 @@
+{
+	"utterance": "give the date yesterday",
+	"intent_type": "handle_query_relative_date",
+	"expected_dialog": "date.relative.past"
+}

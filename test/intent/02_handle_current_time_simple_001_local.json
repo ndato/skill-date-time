@@ -1,0 +1,5 @@
+{
+	"utterance": "time",
+	"intent_type": "what.time.is.it.intent",
+	"expected_dialog": "time.current"
+}

@@ -1,0 +1,6 @@
+{
+	"utterance": "display time for Brno",
+	"intent_type": "handle_show_time",
+	"responses": ["yes"],
+	"expected_dialog": ["did.you.mean.timezone"]
+}

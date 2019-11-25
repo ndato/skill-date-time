@@ -1,0 +1,5 @@
+{
+	"utterance": "Check the clock in Monrovia",
+	"intent_type": "handle_query_time",
+	"expected_dialog": "time.current"
+}

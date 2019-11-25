@@ -1,0 +1,5 @@
+{
+	"utterance": "what day is it yesterday in Pago Pago",
+	"intent_type": "handle_query_relative_date",
+	"expected_dialog": "date.relative.past"
+}

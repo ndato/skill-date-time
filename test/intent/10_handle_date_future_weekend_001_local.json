@@ -1,0 +1,5 @@
+{
+	"utterance": "what dates are next weekend",
+	"intent_type": "date.future.weekend.intent",
+	"expected_dialog": "date.future.weekend"
+}

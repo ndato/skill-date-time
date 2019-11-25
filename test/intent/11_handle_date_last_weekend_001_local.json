@@ -1,0 +1,5 @@
+{
+	"utterance": "what were the days for last weekend",
+	"intent_type": "date.last.weekend.intent",
+	"expected_dialog": "date.last.weekend"
+}

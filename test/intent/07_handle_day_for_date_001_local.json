@@ -1,0 +1,5 @@
+{
+	"utterance": "tell me how long it is until December 1",
+	"intent_type": "handle_day_for_date",
+	"expected_dialog": "date.relative.future"
+}

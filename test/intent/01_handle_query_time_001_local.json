@@ -1,0 +1,5 @@
+{
+	"utterance": "what's the time",
+	"intent_type": "handle_query_time",
+	"expected_dialog": "time.current"
+}
